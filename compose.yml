@@ -1,0 +1,22 @@
+services:
+  azotto-db:
+    image: postgres:16
+    container_name: azotto
+    environment:
+      POSTGRES_DB: azotto
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5441:5432"
+    volumes:
+      - azotto-data:/var/lib/postgresql/data
+    networks:
+      -  azotto-network
+
+networks:
+  azotto-network:
+    driver: bridge
+
+volumes:
+  azotto-data:
+    driver: local

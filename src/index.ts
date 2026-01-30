@@ -18,7 +18,6 @@ import { getAuthUserContext } from "./utils/authMiddleware";
 import type { Request, Response } from "express";
 import { parse } from "graphql";
 import { ensureDatabaseSchema } from "./utils/prismaMigrate";
-import otpRoutes from "./routes/otpRoutes";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -254,7 +253,6 @@ async function startServer() {
   app.get("/", (_req, res) => {
     res.redirect("/graphql");
   })
-  app.use("/api/otp", otpRoutes);
   await ensureDatabaseSchema();
   await createDefaultSuperAdmin();
   const port = Number(process.env.PORT) || 4000;

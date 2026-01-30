@@ -16,7 +16,7 @@ export const alertResolvers = {
         limit: number;
         offset: number;
         filters?: AlertFilters;
-      },context:any
+      }
     ) => {
       // Build where clause
       const where: any = {};

@@ -1,6 +1,4 @@
 import { GraphQLError } from "graphql";
-import { AlertFilters, CreateAlertInput } from "./type";
-import { getAsyncIterator, pubsub } from "../../utils/pubsub";
 import prisma from "../../prisma/client";
 
 export const aiResolvers = {

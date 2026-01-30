@@ -41,7 +41,7 @@ export const invoiceResolvers = {
         },
         include: { parts: true },
       });
-      await invoiceOCRQueue.add("invoiceOCR", { invoiceId: invoice.id });
+      if (invoiceOCRQueue) await invoiceOCRQueue.add("invoiceOCR", { invoiceId: invoice.id });
       await createAuditLog({
         entityType: "INVOICE",
         entityId: invoice.id,

@@ -18,6 +18,7 @@ import { getAuthUserContext } from "./utils/authMiddleware";
 import type { Request, Response } from "express";
 import { parse } from "graphql";
 import { ensureDatabaseSchema } from "./utils/prismaMigrate";
+import "./jobs/workers"; // start BullMQ workers when Redis is available
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import customParseFormat from "dayjs/plugin/customParseFormat";
@@ -29,10 +30,10 @@ const PUBLIC_OPERATIONS = new Set(["createBookDemo"]);
 
 // Common CORS configuration used across routes
 const ALLOWED_ORIGINS = [
-  "https://studio.apollographql.com", 
+  "https://studio.apollographql.com",
   "http://localhost:4000",
-  "http://localhost:5173", 
-  "http://localhost:5174", 
+  "http://localhost:5173",
+  "http://localhost:5174",
 ];
 
 const collectOperationNames = (body: any): string[] => {
@@ -88,7 +89,7 @@ const determineApiType = (req: Request): "public" | "private" => {
 
 async function startServer() {
   const app = express();
-  app.use(express.json());   
+  app.use(express.json());
   const httpServer = http.createServer(app);
 
   const staticDir = path.join(__dirname, "..", "static");
@@ -107,7 +108,7 @@ async function startServer() {
       },
       credentials: true
     })
-  );  
+  );
   app.use(
     cors({
       origin: function (origin, callback) {
@@ -122,7 +123,7 @@ async function startServer() {
       allowedHeaders: ["Content-Type", "Authorization"]
     })
   );
-  
+
   const storage = multer.diskStorage({
     destination: (_req, _file, cb) => {
       cb(null, staticDir);
@@ -147,9 +148,8 @@ async function startServer() {
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const fileUrl = `${req.protocol}://${req.get("host")}/static/${
-        file.filename
-      }`;
+      const fileUrl = `${req.protocol}://${req.get("host")}/static/${file.filename
+        }`;
 
       return res.status(200).json({
         message: "File uploaded successfully",
@@ -164,16 +164,16 @@ async function startServer() {
   });
 
   const wsServer = new WebSocketServer({
-  server: httpServer,
-  path: "/graphql",
-  verifyClient: ({ origin }, done) => {
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      done(true);
-    } else {
-      done(false, 403, "CORS not allowed");
+    server: httpServer,
+    path: "/graphql",
+    verifyClient: ({ origin }, done) => {
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        done(true);
+      } else {
+        done(false, 403, "CORS not allowed");
+      }
     }
-  }
-});
+  });
 
   // ✅ Bind GraphQL WS with context
   const serverCleanup = useServer(
@@ -255,7 +255,7 @@ async function startServer() {
   })
   await ensureDatabaseSchema();
   await createDefaultSuperAdmin();
-  const port = Number(process.env.PORT) || 4000;
+  const port = Number(process.env.PORT) || 6000;
   await new Promise<void>((resolve) => httpServer.listen(port, resolve));
   console.log(`🚀 HTTP endpoint: http://localhost:${port}/graphql`);
   console.log(`🔌 WS subscriptions: ws://localhost:${port}/graphql`);

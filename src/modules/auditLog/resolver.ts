@@ -1,6 +1,7 @@
 import { GraphQLError } from "graphql";
 import { prisma } from "../../prisma/client";
 import { AuditLogFilter } from "./type";
+import { AuditAction, EntityType } from "@prisma/client";
 
 export const auditLogResolvers = {
   Query: {
@@ -40,8 +41,8 @@ export const auditLogResolvers = {
           input,
         }: {
           input: {
-            action: string;
-            entityType: string;
+            action: AuditAction;
+            entityType: EntityType;
             entityId: string;
             oldValue?: any;
             newValue?: any;
@@ -75,7 +76,7 @@ export const auditLogResolvers = {
         }: {
           input: {
             id: string;
-            action?: string;
+            action?: AuditAction;
             oldValue?: any;
             newValue?: any;
             userId?: string;

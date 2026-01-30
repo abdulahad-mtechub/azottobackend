@@ -1,8 +1,8 @@
 import { Queue } from "bullmq";
-import { connection } from "../utils/redis";
+import { createQueue } from "../utils/redis";
 
-export const midnightScraperQueue = new Queue("midnight-scraper", { connection });
-export const invoiceOCRQueue = new Queue("invoice-ocr", { connection });
-export const conditionMatrixQueue = new Queue("condition-matrix", { connection });
-export const blockchainPollingQueue = new Queue("blockchain-polling", { connection });
-export const vestingQueue = new Queue("vesting-update", { connection });
+export const midnightScraperQueue = createQueue("midnight-scraper");
+export const invoiceOCRQueue = createQueue("invoice-ocr");
+export const conditionMatrixQueue = createQueue("condition-matrix");
+export const blockchainPollingQueue = createQueue("blockchain-polling");
+export const vestingQueue = createQueue("vesting-update");

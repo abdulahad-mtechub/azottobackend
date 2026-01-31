@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import { UserModel } from "../modules/user/user";
 import bcrypt from "bcryptjs";
 import prisma from "../prisma/client";
-import { verifyMessage } from "ethers";
+import { ethers } from "ethers";
 
 export interface AuthUser {
   id: string;
@@ -89,11 +89,20 @@ export const createDefaultSuperAdmin = async (): Promise<void> => {
 export function generateNonce(): string {
   return `Azotto Wallet Login :: ${crypto.randomUUID()}`;
 }
+
 export function verifyWalletSignature(
-  message: string,
-  signature: string,
-  expectedAddress: string
+  message: string,      // the nonce/message you stored in DB
+  signature: string,    // the signed message from the user/wallet
+  expectedAddress: string // the wallet address you expect
 ): boolean {
-  const recovered = verifyMessage(message, signature);
-  return recovered.toLowerCase() === expectedAddress.toLowerCase();
+  try {
+    // Recover the address from the signed message
+    const recoveredAddress = ethers.verifyMessage(message, signature);
+
+    // Compare recovered address with the expected address (case-insensitive)
+    return recoveredAddress.toLowerCase() === expectedAddress.toLowerCase();
+  } catch (error) {
+    console.error("Signature verification error:", error);
+    return false;
+  }
 }

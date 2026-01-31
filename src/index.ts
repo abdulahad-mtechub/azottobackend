@@ -15,7 +15,7 @@ import { schema } from "./graphql/schema";
 import { createDefaultSuperAdmin } from "./utils/authMiddleware";
 import { expressMiddleware } from "@as-integrations/express5";
 import { getAuthUserContext } from "./utils/authMiddleware";
-import type { Request, Response } from "express";
+import type { Request } from "express";
 import { parse } from "graphql";
 import { ensureDatabaseSchema } from "./utils/prismaMigrate";
 import "./jobs/workers"; // start BullMQ workers when Redis is available
@@ -90,124 +90,63 @@ const determineApiType = (req: Request): "public" | "private" => {
 async function startServer() {
   const app = express();
   app.use(express.json());
+
   const httpServer = http.createServer(app);
 
+  // ✅ Static folder
   const staticDir = path.join(__dirname, "..", "static");
   await fs.promises.mkdir(staticDir, { recursive: true });
-
   app.use("/static", express.static(staticDir));
 
+  // ✅ Single CORS middleware
   app.use(
     cors({
-      origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (ALLOWED_ORIGINS.includes(origin)) {
-          return callback(null, true);
-        }
-        return callback(new Error("CORS not allowed"), false);
-      },
-      credentials: true
-    })
-  );
-  app.use(
-    cors({
-      origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (ALLOWED_ORIGINS.includes(origin)) {
-          return callback(null, true);
-        }
-        return callback(new Error("CORS not allowed"), false);
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true); // allow Postman / server requests
+        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        callback(new Error("CORS not allowed"));
       },
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE"],
-      allowedHeaders: ["Content-Type", "Authorization"]
+      allowedHeaders: ["Content-Type", "Authorization"],
     })
   );
 
+  // ✅ Upload route
   const storage = multer.diskStorage({
-    destination: (_req, _file, cb) => {
-      cb(null, staticDir);
-    },
+    destination: (_req, _file, cb) => cb(null, staticDir),
     filename: (_req, file, cb) => {
       const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-      const ext = path.extname(file.originalname);
-      cb(null, `${uniqueSuffix}${ext}`);
+      cb(null, `${uniqueSuffix}${path.extname(file.originalname)}`);
     },
   });
 
-  const upload = multer({
-    storage,
-    limits: { fileSize: 50 * 1024 * 1024 },
+  const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+  app.post("/upload", upload.single("file"), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const fileUrl = `${req.protocol}://${req.get("host")}/static/${req.file.filename}`;
+    res.json({ fileUrl });
   });
 
-  // ✅ Upload route (inherits common CORS)
-  app.post("/upload", upload.single("file"), (req: Request, res: Response) => {
-    try {
-      const file = req.file;
-      if (!file) {
-        return res.status(400).json({ error: "No file uploaded" });
-      }
-
-      const fileUrl = `${req.protocol}://${req.get("host")}/static/${file.filename
-        }`;
-
-      return res.status(200).json({
-        message: "File uploaded successfully",
-        fileName: file.filename,
-        fileType: file.mimetype,
-        fileUrl,
-      });
-    } catch (error) {
-      console.error("Upload error:", error);
-      return res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
-
+  // ✅ WebSocket + GraphQL subscriptions
   const wsServer = new WebSocketServer({
     server: httpServer,
     path: "/graphql",
-    verifyClient: ({ origin }, done) => {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-        done(true);
-      } else {
-        done(false, 403, "CORS not allowed");
-      }
-    }
   });
 
-  // ✅ Bind GraphQL WS with context
   const serverCleanup = useServer(
     {
       schema,
       context: async (ctx) => {
-        // For subscriptions, try to get user from connection params
-        const token =
-          ctx.connectionParams?.authorization ||
-          ctx.connectionParams?.Authorization;
+        const token = ctx.connectionParams?.authorization || ctx.connectionParams?.Authorization;
         let user = null;
-
-        if (token) {
-          try {
-            const req = { headers: { authorization: token } };
-            user = await getAuthUserContext(req);
-          } catch (error) {
-            console.error("❌ WebSocket auth error:", error);
-          }
-        }
-
+        if (token) user = await getAuthUserContext({ headers: { authorization: token } });
         return { user };
-      },
-      onConnect: async (ctx) => {
-        console.log("🔌 WebSocket client connected");
-      },
-      onDisconnect: async (ctx) => {
-        console.log("🔌 WebSocket client disconnected");
       },
     },
     wsServer
-  ) as unknown as {
-    dispose: () => Promise<void>;
-  };
+  ) as unknown as { dispose: () => Promise<void> };
 
   // ✅ Apollo Server
   const server = new ApolloServer({
@@ -218,11 +157,7 @@ async function startServer() {
       ApolloServerPluginDrainHttpServer({ httpServer }),
       {
         async serverWillStart() {
-          return {
-            async drainServer() {
-              await serverCleanup.dispose?.();
-            },
-          };
+          return { async drainServer() { await serverCleanup.dispose?.(); } };
         },
       },
     ],
@@ -230,33 +165,27 @@ async function startServer() {
 
   await server.start();
 
-  // ✅ HTTP endpoint for queries and mutations
+  // ✅ Apply middleware
   app.use(
     "/graphql",
-    // bodyParser.json(),
     expressMiddleware(server, {
-      context: async ({ req }: { req: Request }) => {
+      context: async ({ req }) => {
         const apiType = determineApiType(req);
         const user = await getAuthUserContext(req);
-
-        return {
-          user,
-          req,
-          apiType,
-          isPublic: apiType === "public",
-        };
+        return { user, req, apiType, isPublic: apiType === "public" };
       },
     })
   );
 
-  // Optional: dedicated /graphiql path
-  app.get("/", (_req, res) => {
-    res.redirect("/graphql");
-  })
+  // ✅ Redirect root
+  app.get("/", (_req, res) => res.redirect("/graphql"));
+
   await ensureDatabaseSchema();
   await createDefaultSuperAdmin();
-  const port = Number(process.env.PORT) || 6000;
+
+  const port = Number(process.env.PORT) || 8000;
   await new Promise<void>((resolve) => httpServer.listen(port, resolve));
+
   console.log(`🚀 HTTP endpoint: http://localhost:${port}/graphql`);
   console.log(`🔌 WS subscriptions: ws://localhost:${port}/graphql`);
 }

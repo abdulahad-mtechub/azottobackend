@@ -74,6 +74,7 @@ export const userResolvers = {
           walletAddress,
           role: UserRole.CUSTOMER,
           signature: nonce,
+          name: "Customer",
         },
       });
 
@@ -195,7 +196,7 @@ export const userResolvers = {
       return { token, user };
     },
     
-    connectWallet: async (_: any, { walletAddress,signature, }: { walletAddress: string,signature:string }) => {
+    connectWallet: async (_: any, { walletAddress,signature, }: { walletAddress: string,signature?:string }) => {
       if (!walletAddress) {
         throw new GraphQLError("Wallet address is required.");
       }
@@ -216,14 +217,16 @@ export const userResolvers = {
         });
       }
 
-      const isValid = verifyWalletSignature(
-        user.signature || "",
-        signature,
-        walletAddress
-      );
-
-      if (!isValid) {
-        throw new GraphQLError("Invalid wallet signature");
+      let isValid
+      if(signature){
+        isValid = verifyWalletSignature(
+          user.signature || "",
+          signature,
+          walletAddress
+        );
+        if (!isValid) {
+          throw new GraphQLError("Invalid wallet signature");
+        }
       }
 
       await prisma.user.update({

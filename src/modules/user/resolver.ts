@@ -196,49 +196,44 @@ export const userResolvers = {
       return { token, user };
     },
     
-    connectWallet: async (_: any, { walletAddress,signature, }: { walletAddress: string,signature?:string }) => {
-      if (!walletAddress) {
-        throw new GraphQLError("Wallet address is required.");
+    connectWallet: async (_: any, { walletAddress,signature, }: { walletAddress: string; signature: string }) => {
+      if (!walletAddress || !signature) {
+        throw new GraphQLError("Wallet address and signature are required.");
       }
 
-      // Check if user already exists with this wallet
+      // EXACT message frontend signed
+      const message = `${walletAddress}weareUniform`;
+
+      // 🔐 Verify signature
+      const isValid = verifyWalletSignature(
+        message,
+        signature,
+        walletAddress
+      );
+
+      if (!isValid) {
+        throw new GraphQLError("Invalid wallet signature");
+      }
+
+      // Find or create user
       let user = await prisma.user.findUnique({
         where: { walletAddress },
       });
 
       if (!user) {
-        // Create new user with default CUSTOMER role
         user = await prisma.user.create({
           data: {
             walletAddress,
             role: UserRole.CUSTOMER,
-            name: "Customer", // default name
+            name: "Customer",
           },
         });
       }
 
-      let isValid
-      if(signature){
-        isValid = verifyWalletSignature(
-          user.signature || "",
-          signature,
-          walletAddress
-        );
-        if (!isValid) {
-          throw new GraphQLError("Invalid wallet signature");
-        }
-      }
-
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { signature: null },
-      });
-
-      // Generate JWT token
+      // Generate JWT
       const token = jwt.sign(
         {
           userId: user.id,
-          email: user.email,
           role: user.role,
           walletAddress: user.walletAddress,
           isLoggedIn: true,

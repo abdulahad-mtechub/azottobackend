@@ -31,6 +31,7 @@ const PUBLIC_OPERATIONS = new Set(["createBookDemo"]);
 // Common CORS configuration used across routes
 const ALLOWED_ORIGINS = [
   "https://studio.apollographql.com",
+  "http://localhost:8000",
   "http://localhost:4000",
   "http://localhost:5173",
   "http://localhost:5174",

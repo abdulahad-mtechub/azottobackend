@@ -91,16 +91,16 @@ export function generateNonce(): string {
 }
 
 export function verifyWalletSignature(
-  message: string,      // the nonce/message you stored in DB
-  signature: string,    // the signed message from the user/wallet
-  expectedAddress: string // the wallet address you expect
+  message: string,
+  signature: string,
+  expectedAddress: string
 ): boolean {
   try {
-    // Recover the address from the signed message
     const recoveredAddress = ethers.verifyMessage(message, signature);
 
-    // Compare recovered address with the expected address (case-insensitive)
-    return recoveredAddress.toLowerCase() === expectedAddress.toLowerCase();
+    return (
+      recoveredAddress.toLowerCase() === expectedAddress.toLowerCase()
+    );
   } catch (error) {
     console.error("Signature verification error:", error);
     return false;

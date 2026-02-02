@@ -196,57 +196,58 @@ export const userResolvers = {
       return { token, user };
     },
     
-    connectWallet: async (_: any, { walletAddress,signature, }: { walletAddress: string; signature: string }) => {
-      if (!walletAddress || !signature) {
-        throw new GraphQLError("Wallet address and signature are required.");
-      }
+    connectWallet: async ( _: any,{walletAddress, signature,}: { walletAddress: string; signature: string }) => {
+    if (!walletAddress || !signature) {
+      throw new GraphQLError("Wallet address and signature are required.");
+    }
 
-      // EXACT message frontend signed
-      const message = `${walletAddress}weareUniform`;
+    // ✅ MUST MATCH FRONTEND MESSAGE EXACTLY
+    const message = `Login to Azotto\nWallet: ${walletAddress}`;
 
-      // 🔐 Verify signature
-      const isValid = verifyWalletSignature(
-        message,
-        signature,
-        walletAddress
-      );
+    // 🔐 Verify signature
+    const isValid = verifyWalletSignature(
+      message,
+      signature,
+      walletAddress
+    );
 
-      if (!isValid) {
-        throw new GraphQLError("Invalid wallet signature");
-      }
+    if (!isValid) {
+      throw new GraphQLError("Invalid wallet signature");
+    }
 
-      // Find or create user
-      let user = await prisma.user.findUnique({
-        where: { walletAddress },
-      });
+    // Find or create user
+    let user = await prisma.user.findUnique({
+      where: { walletAddress },
+    });
 
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            walletAddress,
-            role: UserRole.CUSTOMER,
-            name: "Customer",
-          },
-        });
-      }
-
-      // Generate JWT
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          role: user.role,
-          walletAddress: user.walletAddress,
-          isLoggedIn: true,
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          walletAddress,
+          role: UserRole.CUSTOMER,
+          name: "Customer",
         },
-        process.env.JWT_SECRET!,
-        { expiresIn: "30d" }
-      );
+      });
+    }
 
-      return {
-        token,
-        user,
-      };
+    // Generate JWT
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        role: user.role,
+        walletAddress: user.walletAddress,
+        isLoggedIn: true,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: "30d" }
+    );
+
+    return {
+      token,
+      user,
+    };
     },
+
 
     deleteUser: async (_: any, { id }: { id: string },context:any) => {
       const user = await prisma.user.findUnique({ where: { id } });

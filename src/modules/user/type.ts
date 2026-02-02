@@ -27,6 +27,9 @@ export const userTypeDefs = gql`
     password: String!
     role: UserRole!
 
+    walletAddress: String 
+    signature:     String
+
     createdAt: DateTime!
     createdBy: String
     updatedAt: DateTime
@@ -36,6 +39,12 @@ export const userTypeDefs = gql`
     isDeleted: Boolean!
 
     wallet: AztoWallet
+    auditLogs:    [AuditLog]
+    aiQuotas:     [AIQuota]
+    aiDecisions:  [AIDecision]
+    chainTxs:     [BlockchainTransaction]
+    alerts:       [Alert]
+    documents:    [Document]
   }
 
   input CreateUserInput {

@@ -15,6 +15,8 @@ import { userTypeDefs } from "../modules/user/type";
 import { userResolvers } from "../modules/user/resolver";
 import { vinPassportResolvers } from "../modules/vinPassport/resolver";
 import { vinPassportTypeDefs } from "../modules/vinPassport/type";
+import { documentResolvers } from "../modules/document/resolver";
+import {documentTypeDefs} from "../modules/document/type"
 
 export const schema = makeExecutableSchema({
   typeDefs: [
@@ -26,7 +28,7 @@ export const schema = makeExecutableSchema({
     systemTypeDefs,
     userTypeDefs,
     vinPassportTypeDefs,
-
+    documentTypeDefs
   ],
   resolvers: [
     aiResolvers,
@@ -37,5 +39,6 @@ export const schema = makeExecutableSchema({
     systemResolvers,
     userResolvers,
     vinPassportResolvers,
+    documentResolvers
   ],
 });

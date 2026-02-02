@@ -33,3 +33,4 @@ coverage/
 
 # Optional cache
 .cache/
+uaevisaapp-firebase-adminsdk-*.json

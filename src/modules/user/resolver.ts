@@ -160,6 +160,9 @@ export const userResolvers = {
       return updatedUser;
     },
 
+    staffLogin: async (_: any, input: { email: string; password: string }) => {
+    },
+
     changePassword: async (_: any, { id, oldPassword, newPassword }: { id: string; oldPassword: string; newPassword: string }) => {
       const user = await prisma.user.findUnique({ where: { id } });
       if (!user) throw new GraphQLError("User not found");

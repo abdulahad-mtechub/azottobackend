@@ -35,6 +35,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:4000",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
   "https://deft-dango-c8adf0.netlify.app"
 ];
 

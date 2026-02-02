@@ -136,6 +136,8 @@ export const userTypeDefs = gql`
     connectWallet(walletAddress: String! signature:String): AuthPayload!
     deleteUser(id: ID!): Boolean!
 
+    staffLogin(email: String, password: String!): LoginRes!
+
     #####################
     # WALLET MUTATIONS
     #####################

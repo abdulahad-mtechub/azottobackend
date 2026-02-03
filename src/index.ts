@@ -29,15 +29,7 @@ dayjs.extend(customParseFormat);
 const PUBLIC_OPERATIONS = new Set(["createBookDemo"]);
 
 // Common CORS configuration used across routes
-const ALLOWED_ORIGINS = [
-  "https://studio.apollographql.com",
-  "http://localhost:8000",
-  "http://localhost:4000",
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "https://deft-dango-c8adf0.netlify.app"
-];
+const ALLOW_ALL_ORIGINS = true;
 
 const collectOperationNames = (body: any): string[] => {
   if (!body) return [];
@@ -104,11 +96,7 @@ async function startServer() {
   // ✅ Single CORS middleware
   app.use(
     cors({
-      origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // allow Postman / server requests
-        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-        callback(new Error("CORS not allowed"));
-      },
+      origin: ALLOW_ALL_ORIGINS ? true : undefined,
       credentials: true,
       methods: ["GET", "POST", "PUT", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization"],

@@ -1,0 +1,3 @@
+[submodule "azottobackend"]
+	path = azottobackend
+	url = git@github.com:abdulahad-mtechub/azottobackend.git

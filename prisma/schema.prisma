@@ -90,9 +90,9 @@ enum ColorStatus {
 model User {
   id            String   @id @default(uuid())
   name          String?
-  email         String?   @unique
+  email         String?   
   password      String?
-  role          UserRole
+  role          UserRole?
 
   walletAddress String?   @unique
   signature     String?   // do NOT keep unique if this is login-based

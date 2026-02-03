@@ -44,7 +44,7 @@ export const userResolvers = {
       return { users, totalCount };
     },
     getUser: async (_: any, { id }: { id: string }) => {
-      const user = await prisma.user.findUnique({ where: { id }, include: { wallet: true } });
+      const user = await prisma.user.findFirst({ where: { id }, include: { wallet: true } });
       if (!user || user.isDeleted) throw new GraphQLError("User not found");
       return user;
     },
@@ -85,9 +85,6 @@ export const userResolvers = {
   Mutation: {
     registerUser: async (_: any, { input }: { input: CreateUserInput },context:any) => {
       const { name, email, password, role } = input;
-
-      const existingUser = await prisma.user.findUnique({ where: { email } });
-      if (existingUser) throw new GraphQLError("A user with this email already exists.");
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -161,6 +158,39 @@ export const userResolvers = {
     },
 
     staffLogin: async (_: any, input: { email: string; password: string }) => {
+      const { password, email } = input;
+
+      const user = await prisma.user.findFirst({
+        where: { email, isDeleted: false },
+      });
+
+      if (!user) throw new Error("User not found");
+      if (!password) throw new Error("Password is required");
+
+      // Check if user is NOT a Customer (staff/admin only)
+      if (user.role !== "ADMIN") {
+        throw new Error(
+          "Invalid credentials. Please use the website to login."
+        );
+      }
+
+     const isPasswordValid = await bcrypt.compare(password, user.password || "");
+      if (!isPasswordValid) throw new GraphQLError("Invalid email or password.");
+
+      const token = jwt.sign(
+        { userId: user.id, email: user.email, role: user.role, name: user.name },
+        process.env.JWT_SECRET!,
+        { expiresIn: "30d" }
+      );
+
+      // Return the tokens and user details
+      return {
+        token,
+        user: {
+          ...user,
+          password: undefined, // Exclude password from the returned object
+        },
+      };
     },
 
     changePassword: async (_: any, { id, oldPassword, newPassword }: { id: string; oldPassword: string; newPassword: string }) => {
@@ -181,7 +211,9 @@ export const userResolvers = {
 
       if (!email || !password) throw new GraphQLError("Email and password are required.");
 
-      const user = await prisma.user.findUnique({ where: { email } });
+      console.log("Attempting login for email:", email, "with password:", password);
+      const user = await prisma.user.findFirst({ where: { email,isDeleted:false } });
+      console.log("User found:", user);
       if (!user || user.isDeleted) throw new GraphQLError("Invalid email or password.");
 
       if (role && user.role !== role) throw new GraphQLError("Invalid role for this user.");
@@ -227,8 +259,6 @@ export const userResolvers = {
       user = await prisma.user.create({
         data: {
           walletAddress,
-          role: UserRole.CUSTOMER,
-          name: "Customer",
         },
       });
     }

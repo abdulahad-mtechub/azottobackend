@@ -2,10 +2,8 @@ import gql from "graphql-tag";
 
 export const documentTypeDefs = gql`
   scalar DateTime
-  scalar JSON
 
   enum FileType {
-    INVOICE
     IMAGE
     PDF
     OTHER
@@ -26,12 +24,8 @@ export const documentTypeDefs = gql`
     state: FileState!
     checksum: String!
     vinPassportId: ID
-    invoiceId: ID
     uploadedById: ID
     createdAt: DateTime!
-    updatedAt: DateTime
-    deletedAt: DateTime
-    isDeleted: Boolean!
   }
 
   input CreateDocumentInput {
@@ -39,7 +33,6 @@ export const documentTypeDefs = gql`
     fileUrl: String!
     fileType: FileType!
     vinPassportId: ID
-    invoiceId: ID
     uploadedById: ID
     checksum: String!
   }

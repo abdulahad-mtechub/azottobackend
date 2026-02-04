@@ -17,7 +17,6 @@ export const auditLogTypeDefs = gql`
     USER
     WALLET
     VIN_PASSPORT
-    INVOICE
     PART
     GAS_SETTLEMENT
   }
@@ -32,9 +31,6 @@ export const auditLogTypeDefs = gql`
 
     userId: ID
     user: User
-
-    invoiceId: ID
-    invoice: Invoice
 
     vinPassportId: ID
     vinPassport: VinPassport
@@ -82,8 +78,6 @@ export const auditLogTypeDefs = gql`
 
   type Mutation {
     createAuditLog(input: CreateAuditLogInput!): AuditLog!
-    updateAuditLog(input: UpdateAuditLogInput!): AuditLog!
-    deleteAuditLog(id: ID!): Boolean!
   }
 `;
 

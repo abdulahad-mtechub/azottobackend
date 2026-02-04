@@ -15,17 +15,6 @@ export const systemResolvers = {
   },
 
   Mutation: {
-    updateSystemState: async (_: any, { input }: any) => {
-      const { id, value, updatedBy } = input;
-      const existing = await prisma.systemState.findUnique({ where: { id } });
-      if (!existing) throw new GraphQLError("SystemState not found");
-
-      return prisma.systemState.update({
-        where: { id },
-        data: { value, updatedBy },
-      });
-    },
-
     createConditionMatrix: async (_: any, { input }: any) => {
       return prisma.conditionMatrix.create({ data: input });
     },

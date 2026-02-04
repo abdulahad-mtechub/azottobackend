@@ -8,7 +8,7 @@ export const checkSystemState = async (operationName: string) => {
   }
 
   const pauseSystem = await prisma.systemState.findUnique({ where: { key: "PAUSE_SYSTEM" } });
-  if (pauseSystem?.value === "ON" && ["createInvoice","updateVIN","mintVINNFT"].includes(operationName)) {
+  if (pauseSystem?.value === "ON" && ["updateVIN","mintVINNFT"].includes(operationName)) {
     throw new GraphQLError(`Operation ${operationName} blocked: System is PAUSED`);
   }
 };

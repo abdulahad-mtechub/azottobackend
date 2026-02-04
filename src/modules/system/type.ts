@@ -11,7 +11,7 @@ export const systemTypeDefs = gql`
 
   type SystemState {
     id: ID!
-    key: String!
+    key: SystemStateKey!
     value: String!
     updatedAt: DateTime!
     updatedBy: String
@@ -28,7 +28,7 @@ export const systemTypeDefs = gql`
   }
 
   input UpdateSystemStateInput {
-    id: ID!
+    key: SystemStateKey!
     value: String!
     updatedBy: String
   }
@@ -52,8 +52,7 @@ export const systemTypeDefs = gql`
   }
 
   type Mutation {
-  setSystemState(key: String!, value: String!): SystemState!
-    updateSystemState(input: UpdateSystemStateInput!): SystemState!
+    setSystemState(key: String!, value: String!): SystemState!
     createConditionMatrix(input: CreateConditionMatrixInput!): ConditionMatrix!
     updateConditionMatrix(input: UpdateConditionMatrixInput!): ConditionMatrix!
   }

@@ -35,11 +35,7 @@ export const auditLogResolvers = {
   },
 
   Mutation: {
-    createAuditLog: async (
-        _: any,
-        {
-          input,
-        }: {
+    createAuditLog: async (_: any,{ input,}: {
           input: {
             action: AuditAction;
             entityType: EntityType;
@@ -47,7 +43,6 @@ export const auditLogResolvers = {
             oldValue?: any;
             newValue?: any;
             userId?: string;
-            invoiceId?: string;
             vinPassportId?: string;
           };
         }
@@ -60,56 +55,12 @@ export const auditLogResolvers = {
             oldValue: input.oldValue,
             newValue: input.newValue,
             userId: input.userId,
-            invoiceId: input.invoiceId,
             vinPassportId: input.vinPassportId,
           },
-          include: { user: true, invoice: true, vinPassport: true },
+          include: { user: true, vinPassport: true },
         });
   
         return log;
       },
-  
-      updateAuditLog: async (
-        _: any,
-        {
-          input,
-        }: {
-          input: {
-            id: string;
-            action?: AuditAction;
-            oldValue?: any;
-            newValue?: any;
-            userId?: string;
-            invoiceId?: string;
-            vinPassportId?: string;
-          };
-        }
-      ) => {
-        const log = await prisma.auditLog.findUnique({ where: { id:input.id } });
-        if (!log || log.isDeleted) throw new GraphQLError("AuditLog not found");
-  
-        const updatedLog = await prisma.auditLog.update({
-          where: { id: input.id },
-          data: {
-            ...input,
-            updatedAt: new Date(),
-          },
-          include: { user: true, invoice: true, vinPassport: true },
-        });
-  
-        return updatedLog;
-      },
-
-    deleteAuditLog: async (_: any, { id }: { id: string }) => {
-      const log = await prisma.auditLog.findUnique({ where: { id } });
-      if (!log || log.isDeleted) throw new GraphQLError("AuditLog not found");
-
-      await prisma.auditLog.update({
-        where: { id },
-        data: { isDeleted: true, updatedAt: new Date() },
-      });
-
-      return true;
-    },
   },
 };

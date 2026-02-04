@@ -10,7 +10,6 @@ export const alertTypeDefs = gql`
     search: String
     startDate: String
     endDate: String
-    businessId: String
     string: String
   }
 

@@ -40,9 +40,6 @@ export const userTypeDefs = gql`
 
     wallet: AztoWallet
     auditLogs:    [AuditLog]
-    aiQuotas:     [AIQuota]
-    aiDecisions:  [AIDecision]
-    chainTxs:     [BlockchainTransaction]
     alerts:       [Alert]
     documents:    [Document]
   }

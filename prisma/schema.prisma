@@ -46,6 +46,7 @@ enum EntityType {
   WALLET
   VIN_PASSPORT
   DOCUMENT
+  BlockchainTransaction
 }
 
 
@@ -102,6 +103,7 @@ model User {
   auditLogs     AuditLog[]
   alerts        Alert[]
   documents     Document[]
+  chainTxs      BlockchainTransaction[]
 
   createdAt DateTime @default(now())
   createdBy String?
@@ -167,6 +169,8 @@ model ConditionMatrix {
   vinPassportId String
   vinPassport   VinPassport @relation(fields: [vinPassportId], references: [id])
 
+  auditLogs     AuditLog[] @relation("ConditionMatrixAuditLogs")
+
   summary       Json      // ⬅ Verification output
   status        TxStatus  // VERIFIED / FAILED / PENDING
 
@@ -177,6 +181,20 @@ model ConditionMatrix {
   createdBy String?
   updatedAt DateTime?
   updatedBy String?
+}
+
+model BlockchainTransaction {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+
+  entityType EntityType
+  entityId   String    // e.g., ConditionMatrix.id or VinPassport.id
+
+  txHash     String
+  status     TxStatus  @default(PENDING)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime?
 }
 
 
@@ -234,7 +252,7 @@ model AuditLog {
 
   vinPassportId String?
   vinPassport   VinPassport? @relation(fields: [vinPassportId], references: [id])
-  
+
   documentId String?    // foreign key
   document   Document?  @relation("DocumentAuditLogs", fields: [documentId], references: [id])
 

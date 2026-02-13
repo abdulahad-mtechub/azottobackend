@@ -3,6 +3,7 @@ import { UserModel } from "../modules/user/user";
 import bcrypt from "bcryptjs";
 import prisma from "../prisma/client";
 import { ethers } from "ethers";
+import { GraphQLError } from "graphql";
 
 export interface AuthUser {
   id: string;
@@ -13,7 +14,33 @@ export interface AuthUser {
   lastName?: string | null;
   businessId?: string | null;
 }
+export type ContextWithUser = { user: { id: string; role: string | null } | null };
 
+export function requireAuth(context: ContextWithUser): asserts context is ContextWithUser & { user: NonNullable<ContextWithUser["user"]> } {
+  if (!context?.user) throw new GraphQLError("Unauthorized");
+}
+
+export function requireAdmin(context: ContextWithUser): void {
+  requireAuth(context);
+  if (context.user.role !== "ADMIN") throw new GraphQLError("Forbidden: admin required");
+}
+
+export function requireSelfOrAdmin(context: ContextWithUser, resourceUserId: string): void {
+  requireAuth(context);
+  if (context.user.id !== resourceUserId && context.user.role !== "ADMIN") {
+    throw new GraphQLError("Forbidden: access denied");
+  }
+}
+
+export interface AuthUser {
+  id: string;
+  email?: string;
+  username?: string;
+  role: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  businessId?: string | null;
+}
 export const getUserFromToken = (req: any): AuthUser | null => {
   const authHeader = req.headers.authorization;
 
@@ -31,9 +58,6 @@ export const getUserFromToken = (req: any): AuthUser | null => {
     return null; // ✅ Don’t throw error, just mark as unauthenticated
   }
 };
-/**
- * Get full user context from token including name
- */
 export const getAuthUserContext = async (
   req: any
 ) => {
@@ -57,7 +81,6 @@ export const getAuthUserContext = async (
     return null;
   }
 };
-
 export const createDefaultSuperAdmin = async (): Promise<void> => {
   try {
     // Check if SuperAdmin exists
@@ -89,7 +112,6 @@ export const createDefaultSuperAdmin = async (): Promise<void> => {
 export function generateNonce(): string {
   return `Azotto Wallet Login :: ${crypto.randomUUID()}`;
 }
-
 export function verifyWalletSignature(
   message: string,
   signature: string,

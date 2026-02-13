@@ -12,10 +12,83 @@ datasource db {
 //////////////////////
 
 enum UserRole {
-  ADMIN
-  DEALER
-  SELLER
   CUSTOMER
+  OWNER          // Car Owner – VIN data originator
+  DEALER         // Incentivized partner – scraper ingestion
+  FLEET_MANAGER  // Bulk ingestion, fraud & TMU monitoring
+  MANUFACTURER   // Genesis VIN minter, royalties handled on-chain
+  ADMIN          // Governance, kill switch, safety controls
+}
+
+enum KycStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum VinStatus {
+  PENDING        // Created, not yet fully verified
+  ACTIVE         // Verified and usable
+  LOCKED         // Locked due to fraud / governance
+  TRANSFER_PENDING
+}
+
+enum DocumentType {
+  SERVICE_INVOICE
+  TITLE
+  REGISTRATION
+  OWNERSHIP_PROOF
+  INSURANCE_CERTIFICATE
+  MAINTENANCE_HISTORY
+  SUPPORTING_DOCUMENT
+  FRONT_VIEW
+  BACK_VIEW
+  SIDE_VIEWS
+  INTERIOR_VIEW
+  ENGINE_ODOMETER
+  ADDITIONAL_IMAGES
+}
+
+enum CollisionFlag {
+  GREEN
+  YELLOW
+  LIGHT_ORANGE
+  DARK_ORANGE
+  RED
+}
+
+enum BuyerType {
+  DEALER
+  MANUFACTURER
+  PRIVATE
+}
+
+enum FinancialCategory {
+  REVENUE
+  TRUTH_INCENTIVE
+  FEE
+  SETTLEMENT
+}
+
+enum OrganizationType {
+  DEALER
+  FLEET
+  MANUFACTURER
+}
+
+enum TransferStatus {
+  SENT
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELED
+}
+
+enum BatchStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
 }
 
 enum AlertAction {
@@ -34,55 +107,12 @@ enum AlertAction {
   MAINTENANCE_MODE
 }
 
-enum AuditAction {
-  CREATE
-  UPDATE
-  DELETE
-  RESTORE
-}
-
 enum EntityType {
   USER
   WALLET
   VIN_PASSPORT
   DOCUMENT
   BlockchainTransaction
-}
-
-
-enum TxStatus {
-  PENDING
-  VERIFIED
-  CONFIRMED
-  FAILED
-}
-
-enum FileType {
-  IMAGE
-  PDF
-  OTHER
-}
-
-enum FileState {
-  UPLOADED
-  PROCESSING
-  VERIFIED
-  REJECTED
-}
-
-enum ColorStatus {
-  GREEN
-  YELLOW
-  LIGHT_ORANGE
-  DARK_ORANGE
-  RED
-}
-
-enum DocumentCategory {
-  REGISTRATION
-  INSURANCE
-  OWNERSHIP
-  OTHER
 }
 
 //////////////////////
@@ -96,184 +126,393 @@ model User {
   password      String?
   role          UserRole?
 
+  /// Anonymous reference id for public records
+  anonRefId     String?  @unique
+
+  /// Encrypted email (AES-256-GCM)
+  emailEncrypted String?
+
+  /// Coinbase Embedded Wallet user id
+  coinbaseUserId String?  @unique
+
   walletAddress String?   @unique
   signature     String?   // do NOT keep unique if this is login-based
 
-  wallet        AztoWallet?
+  /// KYC state from Sumsub
+  kycStatus     KycStatus @default(PENDING)
+
+  /// One-time activation fee debt flag
+  kycDebtActive Boolean   @default(false)
+
+  createdAt     DateTime @default(now())
+  isDeleted     Boolean @default(false)
+
+  /// Relations
+  wallet        Wallet?
+  vinPassports  VinPassport[]
+  documents     Document[]
   auditLogs     AuditLog[]
   alerts        Alert[]
-  documents     Document[]
-  chainTxs      BlockchainTransaction[]
-
-  createdAt DateTime @default(now())
-  createdBy String?
-  updatedAt DateTime?
-  updatedBy String?
-  deletedAt DateTime?
-  deletedBy String?
-  isDeleted Boolean  @default(false)
-
-  @@index([walletAddress])
-  @@index([isDeleted])
+  memberships   OrganizationMember[]
+  transfersFrom OwnershipTransfer[] @relation("TransferFrom")
+  transfersTo   OwnershipTransfer[] @relation("TransferTo")
+  ledgerEntries FinancialLedger[]
 }
 
-//////////////////////
-// WALLET 
-//////////////////////
+////////////////////////////////////////////////////////////
+// WALLET & TOKEN CAPACITY
+////////////////////////////////////////////////////////////
 
-model AztoWallet {
-  id      String  @id @default(uuid())
-  balance Decimal @default(0) @db.Decimal(18, 8)
-
-  userId  String  @unique
-  user    User    @relation(fields: [userId], references: [id])
-
-  createdAt DateTime @default(now())
-  createdBy String?
-  updatedAt DateTime?
-  updatedBy String?
-  deletedAt DateTime?
-  deletedBy String?
-  isDeleted Boolean  @default(false)
-}
-
-//////////////////////
-// VIN PASSPORT
-//////////////////////
-
-model VinPassport {
-  id             String @id @default(uuid())
-  vin            String @unique
-  extractedData  Json?
-  vinMeta        Json?     // ⬅ Public VIN API response (optional)
-
-  auditLogs      AuditLog[]
-  documents      Document[]
-  conditionMatrices   ConditionMatrix[]     
-
-  createdAt DateTime @default(now())
-  createdBy String?
-  updatedAt DateTime?
-  updatedBy String?
-  deletedAt DateTime?
-  deletedBy String?
-  isDeleted Boolean  @default(false)
-
-  @@index([vin])
-  @@index([isDeleted])
-}
-
-model ConditionMatrix {
+/// PRD:
+/// - AZTO token utility
+/// - 10:1 capacity lock mechanism
+/// - Locked tokens cannot be reused until VIN actions resolve
+model Wallet {
   id            String @id @default(uuid())
+  userId        String @unique
+
+  address       String @unique
+
+  /// Spendable AZTO
+  availableAZTO Int
+
+  /// Locked for VIN minting / capacity
+  lockedAZTO    Int
+  isDeleted     Boolean @default(false)
+
+  user          User   @relation(fields: [userId], references: [id])
+}
+
+////////////////////////////////////////////////////////////
+// VIN PASSPORT (DIGITAL VEHICLE IDENTITY)
+////////////////////////////////////////////////////////////
+
+/// PRD:
+/// - Digital VIN Passport (NFT-backed)
+/// - Represents a single vehicle lifecycle
+/// - Public VIN data + verified history
+model VinPassport {
+  id            String   @id @default(uuid())
+
+  /// Vehicle Identification Number
+  vin           String   @unique
+
+  /// Passport lifecycle state
+  status        VinStatus
+
+  /// Owner of the VIN Passport
+  ownerId       String
+
+  /// On-chain token ID (minted by Manufacturer)
+  mintedTokenId String?
+
+  /// Hash proof of title/registration
+  titleRegHash  String?
+
+  /// 5-and-100 progression counter
+  milestoneCounter Int @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime?
+  isDeleted     Boolean     @default(false)
+
+  /// Relations
+  owner          User            @relation(fields: [ownerId], references: [id])
+  documents      Document[]
+  mileageRecords MileageRecord[]
+  conditionState ConditionState?
+  transfers      OwnershipTransfer[]
+  listings       MarketplaceListing[]
+  batches        VinBatch[]
+  ledgerEntries  FinancialLedger[]
+}
+
+////////////////////////////////////////////////////////////
+// DOCUMENT STORAGE (SOURCE OF TRUTH)
+////////////////////////////////////////////////////////////
+
+/// PRD:
+/// - Truth Engine Scans
+/// - OCR ingestion
+/// - AWS S3 off-chain storage
+/// - Documents are the ONLY source for mileage & health
+model Document {
+  id            String      @id @default(uuid())
 
   vinPassportId String
+  uploadedById  String
+
+  /// Invoice, title, registration, etc.
+  type          DocumentType
+
+  /// Off-chain storage location
+  s3Url         String
+
+  /// Content hash for tamper detection
+  hash          String      @unique
+
+  /// Duplicate detection fingerprint (invoice hash)
+  fileFingerprint String?   @unique
+
+  /// OCR + verification result
+  verified      Boolean     @default(false)
+
+  /// Service provider details
+  shopName      String?
+  businessAddress String?
+  googleMapsStatus Boolean?
+
+  /// Extracted metrics
+  odometer        Int?
+  batteryVoltage  Float?
+  coolantLevelType String?
+  syntheticOilDetection Boolean?
+  transmissionFluidStatus String?
+  tireTreadDepth  Float?
+  collisionDetection Boolean?
+  replacementPartCount Int?
+
+  createdAt     DateTime    @default(now())
+  isDeleted     Boolean @default(true)
+
+  /// Relations
   vinPassport   VinPassport @relation(fields: [vinPassportId], references: [id])
-
-  auditLogs     AuditLog[] @relation("ConditionMatrixAuditLogs")
-
-  summary       Json      // ⬅ Verification output
-  status        TxStatus  // VERIFIED / FAILED / PENDING
-
-  flags         Json?     // mismatches, warnings
-  isFinal       Boolean @default(false)
-
-  createdAt DateTime @default(now())
-  createdBy String?
-  updatedAt DateTime?
-  updatedBy String?
+  uploadedBy    User        @relation(fields: [uploadedById], references: [id])
+  mileageRecords MileageRecord[]
 }
 
-model BlockchainTransaction {
-  id         String    @id @default(uuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id])
+////////////////////////////////////////////////////////////
+// MILEAGE TRACKING (DERIVED ONLY)
+////////////////////////////////////////////////////////////
 
-  entityType EntityType
-  entityId   String    // e.g., ConditionMatrix.id or VinPassport.id
+/// PRD:
+/// - Mileage Ratchet
+/// - TMU (rollback) detection
+/// - Mileage is NEVER user-entered
+/// - Extracted only from verified documents
+model MileageRecord {
+  id            String   @id @default(uuid())
 
-  txHash     String
-  status     TxStatus  @default(PENDING)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime?
+  vinPassportId String
+
+  /// Mileage value extracted from invoice OCR
+  mileage       Int
+
+  /// Source document that produced this mileage
+  sourceDocId   String
+
+  /// Date from the document (not insertion time)
+  recordedAt    DateTime
+
+  /// True if rollback / fraud suspected
+  flaggedTMU    Boolean  @default(false)
+
+  vinPassport   VinPassport @relation(fields: [vinPassportId], references: [id])
+  sourceDoc     Document    @relation(fields: [sourceDocId], references: [id])
 }
 
+////////////////////////////////////////////////////////////
+// VEHICLE HEALTH & CONDITION
+////////////////////////////////////////////////////////////
 
-model SystemState {
-  id        String @id @default(uuid())
-  key       String @unique
-  value     String
+/// PRD:
+/// - Health Tracker
+/// - Green / Red mechanical status
+/// - Derived from service & collision documents
+model ConditionState {
+  id              String        @id @default(uuid())
 
-  updatedAt DateTime @updatedAt
-  updatedBy String?
+  vinPassportId   String        @unique
+
+  /// Accident / collision indicator
+  collisionStatus CollisionFlag
+
+  /// Mechanical health summary
+  mechanicalGreen Boolean
+
+  /// Table A and Table B counters
+  tableA_DamageCount Int @default(0)
+  tableB_MaintenanceCount Int @default(0)
+
+  /// True mileage unknown flag
+  tmuFlag         Boolean @default(false)
+
+  /// Highest verified mileage
+  lastVerifiedOdometer Int?
+
+  updatedAt       DateTime      @updatedAt
+
+  vinPassport     VinPassport   @relation(fields: [vinPassportId], references: [id])
 }
 
-model Document {
-  id           String      @id @default(uuid())
-  fileName     String
-  fileUrl      String
-  fileType     FileType
-  state        FileState   @default(UPLOADED)
-  checksum     String
-  category     DocumentCategory
+////////////////////////////////////////////////////////////
+// AUDIT & COMPLIANCE
+////////////////////////////////////////////////////////////
 
-  vinPassportId String?    
-  vinPassport   VinPassport? @relation(fields: [vinPassportId], references: [id])
-
-  uploadedById String?     
-  uploadedBy   User?        @relation(fields: [uploadedById], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime?
-  deletedAt DateTime?
-  isDeleted Boolean  @default(false)
-  deletedBy String?
-
-  auditLogs AuditLog[] @relation("DocumentAuditLogs") 
-
-  @@index([vinPassportId])
-  @@index([uploadedById])
-}
-
-//////////////////////
-// AUDIT LOG
-//////////////////////
-
+/// PRD:
+/// - Auditor module
+/// - Regulatory & forensic traceability
 model AuditLog {
-  id         String      @id @default(uuid())
-  action     AuditAction
+  id          String   @id @default(uuid())
+
+  /// Actor performing the action
+  actorId    String?
+
+  /// CREATE / UPDATE / VERIFY / LOCK / MINT
+  action     String
+
+  /// VIN_PASSPORT / DOCUMENT / WALLET / SYSTEM
   entityType EntityType
+
   entityId   String
 
-  oldValue   Json?
-  newValue   Json?
+  createdAt  DateTime @default(now())
+  isDeleted  Boolean @default(false)
 
-  userId        String?
-  user          User?        @relation(fields: [userId], references: [id])
-
-  vinPassportId String?
-  vinPassport   VinPassport? @relation(fields: [vinPassportId], references: [id])
-
-  documentId String?    // foreign key
-  document   Document?  @relation("DocumentAuditLogs", fields: [documentId], references: [id])
-
-  conditionMatrixId String?
-  conditionMatrix   ConditionMatrix? @relation("ConditionMatrixAuditLogs", fields: [conditionMatrixId], references: [id])
-
-  createdAt DateTime @default(now())
-  createdBy String?
-  updatedAt DateTime?
-  updatedBy String?
-  deletedAt DateTime?
-  deletedBy String?
-  isDeleted Boolean  @default(false)
-
-  @@index([entityType, entityId])
-  @@index([userId])
+  actor      User?    @relation(fields: [actorId], references: [id])
 }
 
-//////////////////////
-// ALERTS
-//////////////////////
+////////////////////////////////////////////////////////////
+// FINANCIAL LEDGER (1099-DA & TOKENOMICS)
+////////////////////////////////////////////////////////////
+
+model FinancialLedger {
+  id            String   @id @default(uuid())
+
+  userId        String
+  vinPassportId String?
+
+  /// Blockchain tx hash
+  txId          String   @unique
+
+  aztoAmount    Int
+  capacityLockStatus Boolean @default(false)
+  gasUnit       Int     @default(3)
+
+  fmvUSD        Decimal? @db.Decimal(18, 6)
+  costBasis     Decimal? @db.Decimal(18, 6)
+  proceeds      Decimal? @db.Decimal(18, 6)
+
+  financialCategory FinancialCategory
+  splitRatio    Decimal? @db.Decimal(5, 2)
+  aerodromeLockStatus Boolean @default(false)
+
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id])
+  vinPassport   VinPassport? @relation(fields: [vinPassportId], references: [id])
+}
+
+////////////////////////////////////////////////////////////
+// MARKETPLACE (DADA)
+////////////////////////////////////////////////////////////
+
+model MarketplaceListing {
+  id            String   @id @default(uuid())
+
+  vinPassportId String
+
+  productId     String   @unique
+  accessKey     String
+  settledCredits Decimal @default(0) @db.Decimal(18, 6)
+
+  createdAt     DateTime @default(now())
+
+  vinPassport   VinPassport @relation(fields: [vinPassportId], references: [id])
+  purchases     MarketplacePurchase[]
+}
+
+model MarketplacePurchase {
+  id            String   @id @default(uuid())
+  listingId     String
+
+  buyerType     BuyerType
+  revenueSplit  Decimal @db.Decimal(5, 2)
+
+  createdAt     DateTime @default(now())
+
+  listing       MarketplaceListing @relation(fields: [listingId], references: [id])
+}
+
+////////////////////////////////////////////////////////////
+// OWNERSHIP TRANSFER
+////////////////////////////////////////////////////////////
+
+model OwnershipTransfer {
+  id            String   @id @default(uuid())
+
+  vinPassportId String
+  fromUserId    String
+  toUserId      String?
+  toEmail       String?
+
+  status        TransferStatus @default(PENDING)
+  deepLinkToken String? @unique
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  vinPassport   VinPassport @relation(fields: [vinPassportId], references: [id])
+  fromUser      User @relation("TransferFrom", fields: [fromUserId], references: [id])
+  toUser        User? @relation("TransferTo", fields: [toUserId], references: [id])
+}
+
+////////////////////////////////////////////////////////////
+// BATCHING QUEUE (5-and-100)
+////////////////////////////////////////////////////////////
+
+model VinBatch {
+  id            String   @id @default(uuid())
+  vinPassportId String
+  status        BatchStatus @default(QUEUED)
+  qualifiedAt   DateTime   @default(now())
+  processedAt   DateTime?
+
+  vinPassport   VinPassport @relation(fields: [vinPassportId], references: [id])
+}
+
+////////////////////////////////////////////////////////////
+// ORGANIZATIONS (MULTI-TENANCY)
+////////////////////////////////////////////////////////////
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  type      OrganizationType
+  createdAt DateTime @default(now())
+
+  members   OrganizationMember[]
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           UserRole
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+}
+
+////////////////////////////////////////////////////////////
+// SYSTEM GOVERNANCE (KILL SWITCH)
+////////////////////////////////////////////////////////////
+
+/// PRD:
+/// - Emergency Kill Switch
+/// - Controlled by Admin / multisig governance
+model SystemControl {
+  id                 String   @id @default(uuid())
+
+  /// Stops VIN minting
+  mintingPaused      Boolean  @default(false)
+
+  /// Stops marketplace activity
+  marketplacePaused Boolean  @default(false)
+
+  updatedAt          DateTime @updatedAt
+}
 
 model Alert {
   id         String      @id @default(uuid())

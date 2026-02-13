@@ -5,28 +5,19 @@ export async function createAuditLog({
   entityType,
   entityId,
   action,
-  oldValue,
-  newValue,
-  userId,
-  chainTxId,
+  actorId,
 }: {
   entityType: EntityType;
   entityId: string;
   action: "CREATE" | "UPDATE" | "DELETE";
-  oldValue?: any;
-  newValue?: any;
-  userId?: string;
-  chainTxId?: string;
+  actorId?: string;
 }) {
   return prisma.auditLog.create({
     data: {
       entityType,
       entityId,
       action,
-      oldValue,
-      newValue,
-      userId,
-      chainTxId,
+      actorId,
     },
   });
 }

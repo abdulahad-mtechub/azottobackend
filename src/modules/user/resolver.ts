@@ -8,13 +8,16 @@ import { UserRole } from "@prisma/client";
 import { UserModel } from "./user";
 import { createAuditLog } from "../../utils/auditLogger"
 import { getAsyncIterator,pubsub } from "../../utils/pubsub";
-import { generateNonce, verifyWalletSignature } from "../../utils/authMiddleware";
+import { generateNonce, requireAdmin, requireAuth, requireSelfOrAdmin, verifyWalletSignature } from "../../utils/authMiddleware";
+import { capLimit } from "../../utils/pagination";
 
 export const userResolvers = {
   JSON: GraphQLJSON,
 
   Query: {
-    getUsers: async (_: any, { limit = 10, offset = 0, filter }: { limit?: number; offset?: number; filter?: UserFilter }) => {
+    getUsers: async (_: any, { limit = 10, offset = 0, filter }: { limit?: number; offset?: number; filter?: UserFilter }, context: any) => {
+      requireAdmin(context);
+      const take = capLimit(limit, 10);
       const where: any = { isDeleted: false };
 
       if (filter?.roles && filter.roles.length > 0) {
@@ -36,31 +39,36 @@ export const userResolvers = {
 
       const users = await UserModel.findMany({
         where,
-        take: limit,
-        skip: offset,
+        take,
+        skip: Math.max(0, offset ?? 0),
         include: { wallet: true },
       });
 
       return { users, totalCount };
     },
-    getUser: async (_: any, { id }: { id: string }) => {
+    getUser: async (_: any, { id }: { id: string }, context: any) => {
+      requireAuth(context);
       const user = await prisma.user.findFirst({ where: { id }, include: { wallet: true } });
       if (!user || user.isDeleted) throw new GraphQLError("User not found");
+      requireSelfOrAdmin(context, user.id);
       return user;
     },
-    getWallets: async (_: any, { limit = 10, offset = 0 }) => {
-      return prisma.aztoWallet.findMany({
+    getWallets: async (_: any, { limit = 10, offset = 0 }, context: any) => {
+      requireAdmin(context);
+      return prisma.wallet.findMany({
         where: { isDeleted: false },
-        take: limit,
-        skip: offset,
+        take: capLimit(limit, 10),
+        skip: Math.max(0, offset ?? 0),
       });
     },
-    getWallet: async (_: any, { id }: { id: string }) => {
-      const wallet = await prisma.aztoWallet.findUnique({ where: { id } });
+    getWallet: async (_: any, { id }: { id: string }, context: any) => {
+      requireAuth(context);
+      const wallet = await prisma.wallet.findUnique({ where: { id } });
       if (!wallet || wallet.isDeleted) throw new GraphQLError("Wallet not found");
+      requireSelfOrAdmin(context, wallet.userId);
       return wallet;
     },
-    getWalletNonce: async ( _: any, { walletAddress }: { walletAddress: string } ) => {
+    getWalletNonce: async (_: any, { walletAddress }: { walletAddress: string }) => {
       if (!walletAddress) {
         throw new GraphQLError("Wallet address is required");
       }
@@ -83,8 +91,8 @@ export const userResolvers = {
   },
 
   Mutation: {
-    registerUser: async (_: any, { input }: { input: CreateUserInput },context:any) => {
-      const { name, email, password, role } = input;
+    registerUser: async (_: any, { input }: { input: CreateUserInput }, context: any) => {
+      const { name, email, password } = input;
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -93,9 +101,8 @@ export const userResolvers = {
           name,
           email,
           password: hashedPassword,
-          role: role || UserRole.CUSTOMER,
+          role: UserRole.CUSTOMER,
           isDeleted: false,
-          // optionally add imageUrl if your prisma User model has it
         },
       });
 
@@ -109,17 +116,16 @@ export const userResolvers = {
         entityType: "USER",
         entityId: newUser.id,
         action: "CREATE",
-        newValue: newUser,
-        userId: context.user?.id,
+        actorId: context.user?.id,
       });
       return newUser;
     },
-
-    updateUser: async (_: any, { input }: { input: UpdateUserInput },context:any) => {
+    updateUser: async (_: any, { input }: { input: UpdateUserInput }, context: any) => {
       const { id, name, email, password, role, imageUrl } = input;
 
       const existingUser = await prisma.user.findUnique({ where: { id } });
       if (!existingUser) throw new GraphQLError("User not found");
+      requireSelfOrAdmin(context, existingUser.id);
 
       if (email && email !== existingUser.email) {
         const emailConflict = await prisma.user.findFirst({
@@ -137,7 +143,6 @@ export const userResolvers = {
           email,
           password: hashedPassword,
           role,
-          updatedAt: new Date(),
         },
       });
       await pubsub.publish("USER_NOTIFICATION", {
@@ -150,13 +155,10 @@ export const userResolvers = {
         entityType: "USER",
         entityId: updatedUser.id,
         action: "UPDATE",
-        oldValue: existingUser,
-        newValue: updatedUser,
-        userId: context.user?.id,
+        actorId: context.user?.id,
       });
       return updatedUser;
     },
-
     staffLogin: async (_: any, input: { email: string; password: string }) => {
       const { password, email } = input;
 
@@ -174,7 +176,7 @@ export const userResolvers = {
         );
       }
 
-     const isPasswordValid = await bcrypt.compare(password, user.password || "");
+      const isPasswordValid = await bcrypt.compare(password, user.password || "");
       if (!isPasswordValid) throw new GraphQLError("Invalid email or password.");
 
       const token = jwt.sign(
@@ -192,8 +194,8 @@ export const userResolvers = {
         },
       };
     },
-
-    changePassword: async (_: any, { id, oldPassword, newPassword }: { id: string; oldPassword: string; newPassword: string }) => {
+    changePassword: async (_: any, { id, oldPassword, newPassword }: { id: string; oldPassword: string; newPassword: string }, context: any) => {
+      requireSelfOrAdmin(context, id);
       const user = await prisma.user.findUnique({ where: { id } });
       if (!user) throw new GraphQLError("User not found");
 
@@ -203,17 +205,14 @@ export const userResolvers = {
 
       const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-      return prisma.user.update({ where: { id }, data: { password: hashedPassword, updatedAt: new Date() } });
+      return prisma.user.update({ where: { id }, data: { password: hashedPassword} });
     },
-
     loginUser: async (_: any, { input }: { input: { email: string; password: string; role?: UserRole } }) => {
       const { email, password, role } = input;
 
       if (!email || !password) throw new GraphQLError("Email and password are required.");
 
-      console.log("Attempting login for email:", email, "with password:", password);
-      const user = await prisma.user.findFirst({ where: { email,isDeleted:false } });
-      console.log("User found:", user);
+      const user = await prisma.user.findFirst({ where: { email, isDeleted: false } });
       if (!user || user.isDeleted) throw new GraphQLError("Invalid email or password.");
 
       if (role && user.role !== role) throw new GraphQLError("Invalid role for this user.");
@@ -230,63 +229,112 @@ export const userResolvers = {
 
       return { token, user };
     },
-    
-    connectWallet: async ( _: any,{walletAddress, signature,}: { walletAddress: string; signature: string }) => {
-    if (!walletAddress || !signature) {
-      throw new GraphQLError("Wallet address and signature are required.");
-    }
+    connectWallet: async (_: any, { walletAddress, signature, }: { walletAddress: string; signature: string }) => {
+      if (!walletAddress || !signature) {
+        throw new GraphQLError("Wallet address and signature are required.");
+      }
 
-    // ✅ MUST MATCH FRONTEND MESSAGE EXACTLY
-    const message = `Login to Azotto\nWallet: ${walletAddress}`;
+      const user = await prisma.user.findUnique({
+        where: { walletAddress },
+      });
 
-    // 🔐 Verify signature
-    const isValid = verifyWalletSignature(
-      message,
-      signature,
-      walletAddress
-    );
+      if (!user || !user.signature) {
+        throw new GraphQLError("Call getWalletNonce first to obtain the message to sign.");
+      }
 
-    if (!isValid) {
-      throw new GraphQLError("Invalid wallet signature");
-    }
+      const isValid = verifyWalletSignature(user.signature, signature, walletAddress);
+      if (!isValid) {
+        throw new GraphQLError("Invalid wallet signature");
+      }
 
-    // Find or create user
-    let user = await prisma.user.findUnique({
-      where: { walletAddress },
-    });
+      // Generate JWT
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          role: user.role,
+          walletAddress: user.walletAddress,
+          isLoggedIn: true,
+        },
+        process.env.JWT_SECRET!,
+        { expiresIn: "30d" }
+      );
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          walletAddress,
+      return {
+        token,
+        user,
+      };
+    },
+    coinbaseLogin: async (_: any, { walletAddress, signature }: { walletAddress: string; signature: string }) => {
+      // Coinbase Wallet uses the same signature flow as connectWallet
+      return userResolvers.Mutation.connectWallet(
+        _,
+        { walletAddress, signature }
+      );
+    },
+    coinbaseEmbeddedLogin: async (
+      _value: any,
+      { input }: { input: { idToken: string; accessToken: string; walletAddress: string; email?: string; coinbaseUserId: string } }
+    ) => {
+      const { idToken, accessToken, walletAddress, email, coinbaseUserId } = input || {};
+      if (!idToken || !accessToken || !walletAddress || !coinbaseUserId) {
+        throw new GraphQLError("idToken, accessToken, walletAddress, coinbaseUserId are required");
+      }
+
+      let user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { coinbaseUserId },
+            { walletAddress },
+            ...(email ? [{ email }] : []),
+          ],
+          isDeleted: false,
         },
       });
-    }
 
-    // Generate JWT
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        role: user.role,
-        walletAddress: user.walletAddress,
-        isLoggedIn: true,
-      },
-      process.env.JWT_SECRET!,
-      { expiresIn: "30d" }
-    );
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            name: "Coinbase User",
+            email: email || null,
+            walletAddress,
+            coinbaseUserId,
+            role: UserRole.OWNER,
+            isDeleted: false,
+          },
+        });
+      } else {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email: email ?? user.email,
+            walletAddress: walletAddress ?? user.walletAddress,
+            coinbaseUserId,
+          },
+        });
+      }
 
-    return {
-      token,
-      user,
-    };
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+          name: user.name,
+          walletAddress: user.walletAddress,
+          isLoggedIn: true,
+          provider: "coinbase_embedded",
+        },
+        process.env.JWT_SECRET!,
+        { expiresIn: "30d" }
+      );
+
+      return { token, user };
     },
-
-
-    deleteUser: async (_: any, { id }: { id: string },context:any) => {
+    deleteUser: async (_: any, { id }: { id: string }, context: any) => {
       const user = await prisma.user.findUnique({ where: { id } });
       if (!user) throw new GraphQLError("User not found");
+      requireSelfOrAdmin(context, user.id);
 
-      const deletedUser = await prisma.user.update({ where: { id }, data: { isDeleted: true, updatedAt: new Date() } });
+      const deletedUser = await prisma.user.update({ where: { id }, data: { isDeleted: true } });
       await pubsub.publish("USER_NOTIFICATION", {
         userDeleted: {
           message: `User ${deletedUser.name} has been deleted!`,
@@ -297,28 +345,29 @@ export const userResolvers = {
         entityType: "USER",
         entityId: deletedUser.id,
         action: "DELETE",
-        oldValue: deletedUser,
-        userId: context.user?.id,
+        actorId: context.user?.id,
       });
       return true;
     },
+    createWallet: async (_: any, { input }: { input: CreateWalletInput }, context: any) => {
+      requireAuth(context);
+      const { userId, availableAZTO } = input;
 
-    createWallet: async (_: any, { input }: { input: CreateWalletInput },context:any) => {
-      const { userId, balance } = input;
-
-      // check if user exists
+      // check if user exists; only admin can create wallet for another user
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user || user.isDeleted) throw new GraphQLError("User not found");
+      if (context.user.id !== userId && context.user.role !== "ADMIN") {
+        throw new GraphQLError("Forbidden: can only create wallet for self or as admin");
+      }
 
-      const wallet = await prisma.aztoWallet.create({
-        data: { userId, balance },
+      const wallet = await prisma.wallet.create({
+        data: { userId, address: "", availableAZTO, lockedAZTO: 0 },
       });
       await createAuditLog({
         entityType: "WALLET",
         entityId: wallet.id,
         action: "CREATE",
-        newValue: wallet,
-        userId: context.user?.id,
+        actorId: context.user?.id,
       });
       await pubsub.publish("WALLET_NOTIFICATION", {
         walletCreated: {
@@ -328,58 +377,55 @@ export const userResolvers = {
       });
       return wallet;
     },
+    updateWallet: async (_: any, { input }: { input: UpdateWalletInput }, context: any) => {
+      const { id, availableAZTO,lockedAZTO } = input;
 
-    updateWallet: async (_: any, { input }: { input: UpdateWalletInput },context:any) => {
-      const { id, balance } = input;
-
-      const wallet = await prisma.aztoWallet.findUnique({ where: { id },include:{user:true} });
+      const wallet = await prisma.wallet.findUnique({ where: { id }, include: { user: true } });
       if (!wallet || wallet.isDeleted) throw new GraphQLError("Wallet not found");
+      requireSelfOrAdmin(context, wallet.userId);
 
-      const updatedWallet = prisma.aztoWallet.update({
+      const updatedWallet = await prisma.wallet.update({
         where: { id },
-        data: { balance, updatedAt: new Date() },
+        data: { availableAZTO, lockedAZTO },
       });
 
       await createAuditLog({
         entityType: "WALLET",
         entityId: wallet.id,
         action: "UPDATE",
-        oldValue: wallet,
-        newValue: updatedWallet,
-        userId: context.user?.id,
+        actorId: context.user?.id,
       });
 
       await pubsub.publish("WALLET_NOTIFICATION", {
         walletUpdated: {
           message: `Wallet against ${wallet.user.name} has been updated!`,
-          user:wallet.user,
+          user: wallet.user,
         },
       });
 
       return updatedWallet;
     },
-
-    deleteWallet: async (_: any, { id }: { id: string },context:any) => {
-      const wallet = await prisma.aztoWallet.findUnique({ where: { id },include:{user:true} });
+    deleteWallet: async (_: any, { id }: { id: string }, context: any) => {
+      const wallet = await prisma.wallet.findUnique({ where: { id }, include: { user: true } });
       if (!wallet || wallet.isDeleted) throw new GraphQLError("Wallet not found");
+      requireSelfOrAdmin(context, wallet.userId);
 
-      const deletedWallet = await prisma.aztoWallet.update({
+      const deletedWallet = await prisma.wallet.update({
         where: { id },
-        data: { isDeleted: true, updatedAt: new Date() },
+        data: { isDeleted: true },
       });
 
       await createAuditLog({
         entityType: "WALLET",
         entityId: deletedWallet.id,
         action: "DELETE",
-        oldValue: deletedWallet,
-        userId: context.user?.id,
+        actorId: context.user?.id,
       });
 
       await pubsub.publish("WALLET_NOTIFICATION", {
         walletDeleted: {
           message: `Wallet against  ${wallet.user.name} has been deleted!`,
-          user:wallet.user,
+          user: wallet.user,
         },
       });
 

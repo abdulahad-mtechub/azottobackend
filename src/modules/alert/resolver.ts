@@ -3,6 +3,7 @@ import { AlertModel } from "./alert";
 import { AlertFilters, CreateAlertInput } from "./type";
 import { getAsyncIterator, pubsub } from "../../utils/pubsub";
 import prisma from "../../prisma/client";
+import { requireAuth } from "../../utils/authMiddleware";
 
 export const alertResolvers = {
   Query: {
@@ -16,20 +17,21 @@ export const alertResolvers = {
         limit: number;
         offset: number;
         filters?: AlertFilters;
-      }
+      },
+      context: any
     ) => {
-      // Build where clause
+      requireAuth(context);
       const where: any = {};
 
-      if(filters?.businessId){
+      if (filters?.businessId) {
         where.businessId = filters.businessId;
       }
 
-      if(filters?.userId){
+      if (filters?.userId) {
         where.userId = filters.userId;
       }
 
-      if (filters?.roles  && filters.roles.length > 0) {
+      if (filters?.roles && filters.roles.length > 0) {
         where.userRole = {
           in: filters.roles,
         };
@@ -55,23 +57,30 @@ export const alertResolvers = {
           where.createdAt.lte = new Date(filters.endDate);
         }
       }
-      if(filters?.businessId){
+      if (filters?.businessId) {
         where.businessId = filters?.businessId;
       }
+      if (context.user.role !== "ADMIN") {
+        where.userId = context.user.id;
+      } else if (filters?.userId) {
+        where.userId = filters.userId;
+      }
+      const take = capLimit(limit, 50);
       const [alerts, totalCount, unreadCount] = await Promise.all([
         AlertModel.findMany({
           where,
-          skip: offset,
-          take: limit,
+          skip: Math.max(0, offset ?? 0),
+          take,
           orderBy: { createdAt: "desc" },
         }),
         AlertModel.count({ where }),
-        AlertModel.count({ where: { isRead: false } }),
+        AlertModel.count({ where: { ...where, isRead: false } }),
       ]);
 
       return { alerts, totalCount, unreadCount };
     },
-    getAlert: async (_: any, { id }: { id: string }) => {
+    getAlert: async (_: any, { id }: { id: string }, context: any) => {
+      requireAuth(context);
       const alert = await AlertModel.findFirst({
         where: { id },
       });
@@ -79,29 +88,36 @@ export const alertResolvers = {
       if (!alert) {
         throw new GraphQLError("Alert not found");
       }
+      if (alert.userId && context.user.id !== alert.userId && context.user.role !== "ADMIN") {
+        throw new GraphQLError("Forbidden: access denied");
+      }
 
       return alert;
     },
-    getUserAlerts: async (_: any, { userId,limit,offset }: { userId: string,limit:number,offset:number }) => {
+    getUserAlerts: async (_: any, { userId, limit, offset }: { userId: string, limit: number, offset: number }, context: any) => {
+      requireSelfOrAdmin(context, userId);
+      const take = capLimit(limit, 50);
       const [alerts, totalCount, unreadCount] = await Promise.all([
         AlertModel.findMany({
           where: { userId },
-          skip: offset,
-          take: limit,
+          skip: Math.max(0, offset ?? 0),
+          take,
           orderBy: { createdAt: "desc" },
         }),
         AlertModel.count({ where: { userId } }),
         AlertModel.count({ where: { isRead: false } }),
       ]);
-      return {alerts, totalCount, unreadCount };
+      return { alerts, totalCount, unreadCount };
     },
-    getUnreadAlertsCount: async () => {
+    getUnreadAlertsCount: async (_: any, __: any, context: any) => {
+      requireAuth(context);
       const count = await AlertModel.count({
-        where: { isRead: false },
+        where: { isRead: false, userId: context.user.id },
       });
       return count;
     },
-    getUserUnreadAlertsCount: async (_: any, { userId }: { userId: string }) => {
+    getUserUnreadAlertsCount: async (_: any, { userId }: { userId: string }, context: any) => {
+      requireSelfOrAdmin(context, userId);
       const count = await AlertModel.count({
         where: { isRead: false, userId },
       });
@@ -110,8 +126,9 @@ export const alertResolvers = {
   },
 
   Mutation: {
-    createAlert: async (_: any, { input }: { input: CreateAlertInput }) => {
-      const { userName, userRole, action, activity, userId,businessId } = input;
+    createAlert: async (_: any, { input }: { input: CreateAlertInput }, context: any) => {
+      requireAuth(context);
+      const { userName, userRole, action, activity, userId, businessId } = input;
 
       if (!userName || !userRole || !action || !activity) {
         throw new GraphQLError("All required fields must be provided");
@@ -139,13 +156,17 @@ export const alertResolvers = {
       return alert;
     },
 
-    markAlertAsRead: async (_: any, { id }: { id: string }) => {
+    markAlertAsRead: async (_: any, { id }: { id: string }, context: any) => {
+      requireAuth(context);
       const existingAlert = await AlertModel.findUnique({
         where: { id },
       });
 
       if (!existingAlert) {
         throw new GraphQLError("Alert not found");
+      }
+      if (existingAlert.userId && context.user.id !== existingAlert.userId && context.user.role !== "ADMIN") {
+        throw new GraphQLError("Forbidden: access denied");
       }
 
       const alert = await prisma.alert.update({
@@ -156,22 +177,27 @@ export const alertResolvers = {
       return alert;
     },
 
-    markAllAlertsAsRead: async () => {
+    markAllAlertsAsRead: async (_: any, __: any, context: any) => {
+      requireAuth(context);
       const result = await prisma.alert.updateMany({
-        where: { isRead: false },
+        where: { isRead: false, userId: context.user.id },
         data: { isRead: true },
       });
 
       return result.count;
     },
 
-    deleteAlert: async (_: any, { id }: { id: string }) => {
+    deleteAlert: async (_: any, { id }: { id: string }, context: any) => {
+      requireAuth(context);
       const existingAlert = await AlertModel.findUnique({
         where: { id },
       });
 
       if (!existingAlert) {
         throw new GraphQLError("Alert not found");
+      }
+      if (existingAlert.userId && context.user.id !== existingAlert.userId && context.user.role !== "ADMIN") {
+        throw new GraphQLError("Forbidden: access denied");
       }
 
       const alert = await prisma.alert.delete({

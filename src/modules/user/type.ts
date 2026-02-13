@@ -27,6 +27,7 @@ export const userTypeDefs = gql`
     password: String!
     role: UserRole
 
+    coinbaseUserId: String
     walletAddress: String 
     signature:     String
 
@@ -87,6 +88,15 @@ export const userTypeDefs = gql`
     role: UserRole
   }
 
+  input CoinbaseEmbeddedLoginInput {
+    idToken: String!
+    accessToken: String!
+    walletAddress: String!
+    email: String
+    coinbaseUserId: String!
+  }
+
+
   input UserFilter {
     isActive: Boolean
     roles: [UserRole!]
@@ -131,6 +141,8 @@ export const userTypeDefs = gql`
     changePassword(id: ID!, oldPassword: String!, newPassword: String!): User!
     loginUser(input: LoginInput!): AuthPayload!
     connectWallet(walletAddress: String! signature:String): AuthPayload!
+    coinbaseLogin(walletAddress: String! signature:String): AuthPayload!
+    coinbaseEmbeddedLogin(input: CoinbaseEmbeddedLoginInput!): AuthPayload!
     deleteUser(id: ID!): Boolean!
 
     staffLogin(email: String, password: String!): AuthPayload!
@@ -181,10 +193,11 @@ export interface UserFilter {
 
 export interface CreateWalletInput {
   userId: string;
-  balance: number;
+  availableAZTO: number;
 }
 
 export interface UpdateWalletInput {
   id: string;
-  balance?: number;
+  availableAZTO?: number;
+  lockedAZTO?: number;
 }

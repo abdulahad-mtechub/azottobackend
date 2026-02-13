@@ -3,8 +3,6 @@ import { alertTypeDefs } from "../modules/alert/type";
 import { alertResolvers } from "../modules/alert/resolver";
 import { auditLogResolvers } from "../modules/auditLog/resolver";
 import { auditLogTypeDefs } from "../modules/auditLog/type";
-import { systemResolvers } from "../modules/system/resolver";
-import { systemTypeDefs } from "../modules/system/type";
 import { userTypeDefs } from "../modules/user/type";
 import { userResolvers } from "../modules/user/resolver";
 import { vinPassportResolvers } from "../modules/vinPassport/resolver";
@@ -16,7 +14,6 @@ export const schema = makeExecutableSchema({
   typeDefs: [
     alertTypeDefs,
     auditLogTypeDefs,
-    systemTypeDefs,
     userTypeDefs,
     vinPassportTypeDefs,
     documentTypeDefs
@@ -24,7 +21,6 @@ export const schema = makeExecutableSchema({
   resolvers: [
     alertResolvers,
     auditLogResolvers,
-    systemResolvers,
     userResolvers,
     vinPassportResolvers,
     documentResolvers

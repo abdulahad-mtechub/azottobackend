@@ -264,28 +264,56 @@ export const userResolvers = {
         user,
       };
     },
-    coinbaseLogin: async (_: any, { walletAddress, signature }: { walletAddress: string; signature: string }) => {
-      // Coinbase Wallet uses the same signature flow as connectWallet
-      return userResolvers.Mutation.connectWallet(
-        _,
-        { walletAddress, signature }
-      );
-    },
-    coinbaseEmbeddedLogin: async (
+    coinbaseLogin: async (
       _value: any,
-      { input }: { input: { idToken: string; accessToken: string; walletAddress: string; email?: string; coinbaseUserId: string } }
+      {
+        input,
+      }: {
+        input: {
+          email: string;
+          address: string;
+          signature: string;
+          message: string;
+          timestamp: string;
+        };
+      }
     ) => {
-      const { idToken, accessToken, walletAddress, email, coinbaseUserId } = input || {};
-      if (!idToken || !accessToken || !walletAddress || !coinbaseUserId) {
-        throw new GraphQLError("idToken, accessToken, walletAddress, coinbaseUserId are required");
+      const { email, address, signature, message, timestamp } = input || {};
+      if (!email || !address || !signature || !message || !timestamp) {
+        throw new GraphQLError("email, address, signature, message, timestamp are required");
+      }
+
+      const signedAt = new Date(timestamp);
+      if (Number.isNaN(signedAt.getTime())) {
+        throw new GraphQLError("Invalid timestamp");
+      }
+
+      const maxAgeMs = 5 * 60 * 1000;
+      if (Date.now() - signedAt.getTime() > maxAgeMs) {
+        throw new GraphQLError("Signature expired");
+      }
+
+      const normalizedAddress = address.toLowerCase();
+      const normalizedEmail = email.trim().toLowerCase();
+
+      if (
+        !message.includes(`Email: ${email}`) ||
+        !message.includes(`Address: ${address}`) ||
+        !message.includes(`Timestamp: ${timestamp}`)
+      ) {
+        throw new GraphQLError("Invalid signature message payload");
+      }
+
+      const isValid = verifyWalletSignature(message, signature, address);
+      if (!isValid) {
+        throw new GraphQLError("Invalid wallet signature");
       }
 
       let user = await prisma.user.findFirst({
         where: {
           OR: [
-            { coinbaseUserId },
-            { walletAddress },
-            ...(email ? [{ email }] : []),
+            { walletAddress: normalizedAddress },
+            { email: normalizedEmail },
           ],
           isDeleted: false,
         },
@@ -295,9 +323,9 @@ export const userResolvers = {
         user = await prisma.user.create({
           data: {
             name: "Coinbase User",
-            email: email || null,
-            walletAddress,
-            coinbaseUserId,
+            email: normalizedEmail,
+            walletAddress: normalizedAddress,
+            signature: message,
             role: UserRole.OWNER,
             isDeleted: false,
           },
@@ -306,9 +334,9 @@ export const userResolvers = {
         user = await prisma.user.update({
           where: { id: user.id },
           data: {
-            email: email ?? user.email,
-            walletAddress: walletAddress ?? user.walletAddress,
-            coinbaseUserId,
+            email: normalizedEmail,
+            walletAddress: normalizedAddress,
+            signature: message,
           },
         });
       }
@@ -321,7 +349,7 @@ export const userResolvers = {
           name: user.name,
           walletAddress: user.walletAddress,
           isLoggedIn: true,
-          provider: "coinbase_embedded",
+          provider: "coinbase_wallet_sdk",
         },
         process.env.JWT_SECRET!,
         { expiresIn: "30d" }

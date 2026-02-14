@@ -88,12 +88,12 @@ export const userTypeDefs = gql`
     role: UserRole
   }
 
-  input CoinbaseEmbeddedLoginInput {
-    idToken: String!
-    accessToken: String!
-    walletAddress: String!
-    email: String
-    coinbaseUserId: String!
+  input CoinbaseWalletLoginInput {
+    email: String!
+    address: String!
+    signature: String!
+    message: String!
+    timestamp: String!
   }
 
 
@@ -141,8 +141,7 @@ export const userTypeDefs = gql`
     changePassword(id: ID!, oldPassword: String!, newPassword: String!): User!
     loginUser(input: LoginInput!): AuthPayload!
     connectWallet(walletAddress: String! signature:String): AuthPayload!
-    coinbaseLogin(walletAddress: String! signature:String): AuthPayload!
-    coinbaseEmbeddedLogin(input: CoinbaseEmbeddedLoginInput!): AuthPayload!
+    coinbaseLogin(input: CoinbaseWalletLoginInput!): AuthPayload!
     deleteUser(id: ID!): Boolean!
 
     staffLogin(email: String, password: String!): AuthPayload!
